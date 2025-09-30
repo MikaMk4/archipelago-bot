@@ -1,0 +1,48 @@
+# Python Bytecode & Cache
+**/pycache/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Sensible data
+.env
+data/
+*.secrets
+
+# Docker
+docker-compose.override.yml
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*~
+*.swo
