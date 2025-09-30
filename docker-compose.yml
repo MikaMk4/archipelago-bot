@@ -1,0 +1,10 @@
+services:
+  archipelago-bot:
+    build: .
+    container_name: archipelago-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    network_mode: host
