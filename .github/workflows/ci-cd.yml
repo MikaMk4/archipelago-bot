@@ -10,7 +10,11 @@ jobs:
         steps:
             - name: Checkout Code
               uses: actions/checkout@v3
-        
+
+            - name: Set image name to lowercase
+              id: repo_vars
+              run: echo "image_name=$(echo ghcr.io/${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+            
             - name: Login to GitHub Container Registry
               uses: docker/login-action@v2
               with:
@@ -23,7 +27,7 @@ jobs:
               with:
                 context: .
                 push: true
-                tags: ghcr.io/${{ github.repository }}:latest
+                tags: ghcr.io/${{ steps.repo_vars.outputs.image_name }}:latest
 
     deploy:
         needs: build-and-push
