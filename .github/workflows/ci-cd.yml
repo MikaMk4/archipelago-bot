@@ -7,6 +7,11 @@ on:
 jobs:
     build-and-push:
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+        outputs:
+          image_name: ${{ steps.repo_vars.outputs.image_name }}
         steps:
             - name: Checkout Code
               uses: actions/checkout@v3
