@@ -1,6 +1,7 @@
 services:
   archipelago-bot:
-    image: ghcr.io/mikamk4/archipelago-bot:latest
+    image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
+    build: .
     container_name: archipelago-bot
     restart: unless-stopped
     volumes:
