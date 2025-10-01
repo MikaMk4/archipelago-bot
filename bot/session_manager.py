@@ -45,7 +45,7 @@ class SessionManager:
         print("Session reset and directories cleaned.")
 
 
-    async def create_session(self, host: discord.User, players: list[discord.User]):
+    async def create_session(self, host: discord.User):
         if self.is_active():
             return False, "A session is already active or being prepared."
         
@@ -53,14 +53,22 @@ class SessionManager:
         self.state = "preparing"
         self.host = host
         
-        # Use display_name as it can be the server nickname.
-        self.players = {member.display_name: {'user': member, 'ready': False} for member in players}
-        
-        # Also add the host to the players if they weren't tagged
+        # Add the host to the players
         if host.display_name not in self.players:
             self.players[host.display_name] = {'user': host, 'ready': False}
             
         return True, "Session created successfully."
+    
+    def add_player(self, new_player: discord.Member):
+        if self.state != "preparing":
+            return False, "There is no session being prepared."
+
+        if new_player.display_name in self.players:
+            return False, f"{new_player.mention} is already in the session."
+
+        self.players[new_player.display_name] = {'user': new_player, 'ready': False}
+        print(f"Player {new_player.display_name} added to the session.")
+        return True, f"{new_player.mention} added to the session."
 
     def set_player_ready(self, player_name: str):
         if player_name in self.players:

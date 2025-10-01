@@ -34,25 +34,12 @@ async def on_ready():
 session_group = app_commands.Group(name="session", description="Commands to manage Archipelago sessions.")
 
 @session_group.command(name="create", description="Starts the preparation for a new session.")
-@app_commands.describe(players="Tag the players to include in the session.")
-async def create_session(interaction: discord.Interaction, players: str):
+async def create_session(interaction: discord.Interaction):
     if not is_whitelisted(interaction.user.id) and not await bot.is_owner(interaction.user):
         await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
         return
 
-    # Convert mentions to user objects
-    mentioned_users = interaction.message.mentions if interaction.message else []
-    if not mentioned_users:
-         # Fallback for interactions where message is not available
-         # This is a bit of a hack, but necessary for slash commands
-        try:
-            ids = [int(p.strip('<@!>')) for p in players.split(' ') if p.startswith('<@')]
-            mentioned_users = [await bot.fetch_user(uid) for uid in ids]
-        except (ValueError, discord.NotFound):
-             await interaction.response.send_message("Error: Could not find players. Please tag them with @", ephemeral=True)
-             return
-
-    success, message = await session_manager.create_session(interaction.user, mentioned_users)
+    success, message = await session_manager.create_session(interaction.user)
 
     if not success:
         await interaction.response.send_message(message, ephemeral=True)
@@ -62,7 +49,7 @@ async def create_session(interaction: discord.Interaction, players: str):
     await interaction.response.send_message("Session preparation started. Players can now upload their YAML files.")
     original_response = await interaction.original_response()
     session_manager.preparation_message = original_response
-    await update_preparation_message(session_manager)
+    await _update_preparation_embed()
 
 @session_group.command(name="upload_yaml", description="Upload your YAML file for the session.")
 @app_commands.describe(yaml_file="The YAML file to upload.")
@@ -99,13 +86,12 @@ async def upload_yaml(interaction: discord.Interaction, yaml_file: discord.Attac
 
     # Mark the player as ready
     session_manager.set_player_ready(player_name)
-    await update_preparation_message(session_manager)
+    await _update_preparation_embed()
     await interaction.followup.send(f"File for '{player_name}' uploaded successfully.", ephemeral=True)
 
 
 @session_group.command(name="start", description="Starts the game generation and server.")
 async def start_session(
-        self, 
         interaction: discord.Interaction, 
         password: str = None,
         release_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = None,
@@ -165,34 +151,65 @@ async def cancel_session(interaction: discord.Interaction):
         await session_manager.preparation_message.delete()
 
     session_manager.reset_session()
-    await interaction.response.send_message("The session was canceled.", ephemeral=True)
+    await interaction.response.send_message("The session was canceled.")
+
+@session_group.command(name="add_player", description="Add a player to the current session.")
+async def add_player(interaction: discord.Interaction, new_player: discord.Member):
+    await interaction.response.defer(ephemeral=True)
+
+    if session_manager.state != "preparing":
+        await interaction.followup.send("No session is being prepared right now.", ephemeral=True)
+        return
+
+    if interaction.user.id != session_manager.host.id:
+        await interaction.followup.send("Only the host can add players.", ephemeral=True)
+        return
+
+    success, message = session_manager.add_player(new_player)
+
+    if success:
+        await _update_preparation_embed()
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.followup.send(message, ephemeral=True)
 
 
 # --- Helper Functions ---
-async def update_preparation_message(session_manager: SessionManager):
+async def _update_preparation_embed():
     if not session_manager.preparation_message:
-        print("Warning: Attempted to update a non-existent preparation message.")
         return
 
-    host = session_manager.host
     player_statuses = session_manager.get_player_status()
     
+    status_lines = []
+    all_ready = True
+    for player_info in player_statuses:
+        status_icon = "✅" if player_info['ready'] else "❌"
+        status_lines.append(f"{status_icon} {player_info['user'].mention}")
+        if not player_info['ready']:
+            all_ready = False
+            
     embed = discord.Embed(
-        title="Archipelago Session in preparation",
-        description=f"Host: {host.mention if host else 'Unknown'}\n\nPlayers can now upload their YAML files using `/session upload_yaml`.",
+        title="Archipelago session preparation",
+        description=f"Host: {session_manager.host.mention}\n\nUpload your YAML file with `/session upload_yaml`.",
         color=discord.Color.blue()
     )
+    embed.add_field(name="Player status", value="\n".join(status_lines), inline=False)
     
-    status_text = ""
-    if not player_statuses:
-        status_text = "No players added yet."
-    else:
-        for player in player_statuses:
-            status_text += f"{'✅' if player['ready'] else '❌'} {player['user'].mention}\n"
-    
-    embed.add_field(name="Player Status", value=status_text, inline=False)
-    
-    await session_manager.preparation_message.edit(content="", embed=embed)
+    if all_ready:
+        embed.add_field(
+            name="All players ready!",
+            value=f"The host {session_manager.host.mention} can now start the game with `/session start`.",
+            inline=False
+        )
+        embed.color = discord.Color.green()
+
+    try:
+        await session_manager.preparation_message.edit(embed=embed)
+    except discord.NotFound:
+        print("ERROR: Preparation message not found, could not edit.")
+        if session_manager.preparation_channel:
+            await session_manager.preparation_channel.send("The preparation message was deleted. Session canceled.")
 
 def get_patch_files_view():
     view = discord.ui.View()
