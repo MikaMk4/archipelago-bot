@@ -147,6 +147,7 @@ class SessionManager:
                     await asyncio.sleep(1); continue
 
                 line = line_bytes.decode('utf-8', errors='ignore').strip()
+                print(f"[Server] {line}")
                 if "sent" in line and "to" in line and "found" in line:
                     await channel.send(f"**[Item-Info]** {line}")
                 
