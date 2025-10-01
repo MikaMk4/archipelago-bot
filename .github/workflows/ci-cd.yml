@@ -65,4 +65,4 @@ jobs:
 
             docker pull $IMAGE_NAME:$IMAGE_TAG
 
-            docker-compose up -d --remove-orphans
+            docker compose up -d --remove-orphans
