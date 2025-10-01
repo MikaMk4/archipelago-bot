@@ -15,6 +15,8 @@ RUN chmod +x /opt/archipelago/Archipelago.AppImage
 
 RUN cd /opt/archipelago && ./Archipelago.AppImage --appimage-extract
 
+RUN test -f /opt/archipelago/squashfs-root/ArchipelagoGenerate || (echo "FEHLER: ArchipelagoGenerate was not found after unpacking!" && exit 1)
+
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir -U pip
 RUN pip install --no-cache-dir .
