@@ -39,6 +39,7 @@ data/
 
 # Docker
 docker-compose.override.yml
+compose-dev.yml
 
 # IDE & Editor
 .vscode/

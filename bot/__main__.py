@@ -1,9 +1,11 @@
 import discord
+from discord.ext import commands
 from discord import app_commands
 import os
 import yaml
 import glob
 import zipfile
+import json
 from .config import load_config
 from .session_manager import SessionManager
 
@@ -14,21 +16,26 @@ session_manager = SessionManager()
 intents = discord.Intents.default()
 intents.members = True          # Required to resolve user info from mentions
 
-bot = discord.Client(intents=intents)
-tree = app_commands.CommandTree(bot)
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
+
+def get_whitelist():
+    if not os.path.exists(config['whitelist_path']): return []
+    with open(config['whitelist_path'], 'r') as f: return json.load(f)
+
+def is_whitelisted(user_id: int): return user_id in get_whitelist()
 
 @bot.event
 async def on_ready():
     await tree.sync(guild=discord.Object(id=config['guild_id']))
     print(f'Bot {bot.user} is online and synced with Guild ID {config["guild_id"]}.')
-    print(f'Whitelist: {config["whitelist"]}')
 
-session_group = app_commands.Group(name="session", description="Verwaltet Archipelago-Sessions.")
+session_group = app_commands.Group(name="session", description="Commands to manage Archipelago sessions.")
 
 @session_group.command(name="create", description="Starts the preparation for a new session.")
 @app_commands.describe(players="Tag the players to include in the session.")
 async def create_session(interaction: discord.Interaction, players: str):
-    if interaction.user.id not in config['whitelist']:
+    if not is_whitelisted(interaction.user.id) and not await bot.is_owner(interaction.user):
         await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
         return
 
@@ -59,12 +66,14 @@ async def create_session(interaction: discord.Interaction, players: str):
 @session_group.command(name="upload_yaml", description="Upload your YAML file for the session.")
 @app_commands.describe(yaml_file="The YAML file to upload.")
 async def upload_yaml(interaction: discord.Interaction, yaml_file: discord.Attachment):
+    await interaction.response.defer()
+
     if not session_manager.is_active() or session_manager.state != "preparing":
-        await interaction.response.send_message("There is currently no session preparing.", ephemeral=True)
+        await interaction.followup.send("There is currently no session preparing.", ephemeral=True)
         return
 
     if not yaml_file.filename.lower().endswith('.yaml'):
-        await interaction.response.send_message("Please upload a valid .yaml file.", ephemeral=True)
+        await interaction.followup.send("Please upload a valid .yaml file.", ephemeral=True)
         return
 
     # Read the file content and parse it to get the player name
@@ -73,42 +82,44 @@ async def upload_yaml(interaction: discord.Interaction, yaml_file: discord.Attac
         yaml_data = yaml.safe_load(yaml_content_bytes)
         player_name = yaml_data.get('name')
         if not player_name:
-            await interaction.response.send_message("Your YAML file needs a `name` entry.", ephemeral=True)
+            await interaction.followup.send("Your YAML file needs a `name` entry.", ephemeral=True)
             return
     except Exception as e:
-        await interaction.response.send_message(f"Error when reading YAML: {e}", ephemeral=True)
+        await interaction.followup.send(f"Error when reading YAML: {e}", ephemeral=True)
         return
         
     # Check if the uploader's name matches a player in the session
     if player_name not in session_manager.players:
-        await interaction.response.send_message(f"Your slot name {player_name} in the YAML file is not part of the session.", ephemeral=True)
+        await interaction.followup.send(f"Your slot name {player_name} in the YAML file is not part of the session.", ephemeral=True)
         return
     
-    upload_path = os.path.join(config['upload_dir'], f"{player_name}.yaml")
+    upload_path = os.path.join(config['upload_path'], f"{player_name}.yaml")
     await yaml_file.save(upload_path)
 
     # Mark the player as ready
     session_manager.set_player_ready(player_name)
     await update_preparation_message(session_manager)
-    await interaction.response.send_message(f"File for '{player_name}' uploaded successfully.", ephemeral=True, delete_after=10)
+    await interaction.followup.send(f"File for '{player_name}' uploaded successfully.", ephemeral=True)
 
 
 @session_group.command(name="start", description="Starts the game generation and server.")
 @app_commands.describe(password="Optional server password.")
 async def start_session(interaction: discord.Interaction, password: str = None):
+    await interaction.response.defer()
+
     if not session_manager.is_active() or session_manager.state != "preparing":
-        await interaction.response.send_message("There is no session that could be started.", ephemeral=True)
+        await interaction.followup.send("There is no session that could be started.", ephemeral=True)
         return
     if interaction.user.id != session_manager.host.id:
-        await interaction.response.send_message("Only the host can start the session.", ephemeral=True)
+        await interaction.followup.send("Only the host can start the session.", ephemeral=True)
         return
 
     # Check if all players are ready
     if not all(p['ready'] for p in session_manager.get_player_status()):
-        await interaction.response.send_message("Not everyone has uploaded their YAML yet.", ephemeral=True)
+        await interaction.followup.send("Not everyone has uploaded their YAML yet.", ephemeral=True)
         return
 
-    await interaction.response.send_message("Generating and starting game. This may take a while...", ephemeral=True)
+    await interaction.followup.send("Generating and starting game. This may take a while...", ephemeral=True)
     
     # Pass the current channel to the session manager for the chat bridge
     status_message = await session_manager.start_session(password, interaction.channel)
@@ -120,8 +131,8 @@ async def start_session(interaction: discord.Interaction, password: str = None):
 
     # Send final confirmation with download links
     final_embed = discord.Embed(
-        title="Archipelago Session Gestartet!",
-        description=f"Der Server läuft unter `{config['server_public_ip']}:{config['server_port']}`.\n{status_message}",
+        title="Archipelago Session started!",
+        description=f"Server is reachable through `{config['server_public_ip']}:{config['server_port']}`.\n{status_message}",
         color=discord.Color.green()
     )
     await interaction.channel.send(embed=final_embed, view=get_patch_files_view())
@@ -176,7 +187,7 @@ def get_patch_files_view():
     patch_dir = config.get('patch_dir', 'data/patches')
     
     # Extract patch files from the generated game zip
-    game_zip_path = glob.glob(os.path.join(config['games_dir'], '*.zip'))
+    game_zip_path = glob.glob(os.path.join(config['games_path'], '*.zip'))
     if game_zip_path:
         with zipfile.ZipFile(game_zip_path[0], 'r') as zip_ref:
             for file_info in zip_ref.infolist():

@@ -13,7 +13,7 @@ class SessionManager:
         self.host = None
         self.players = {}  # Map: slot_name -> {'user': discord.User, 'ready': bool}
         self.preparation_message = None
-        self.archipelago_path = "/opt/archipelago/squashfs-root"
+        self.archipelago_path = self.config['archipelago_path']
         self.server_process = None
         self.chat_bridge_task = None
         self.bridge_channel = None
@@ -38,7 +38,7 @@ class SessionManager:
         self.chat_bridge_task = None
 
         # Clean up directories
-        for folder in [self.config['upload_dir'], self.config['games_dir'], self.config['patch_dir']]:
+        for folder in [self.config['upload_path'], self.config['games_path'], self.config['patches_path']]:
             if os.path.exists(folder):
                 for file in os.listdir(folder):
                     os.remove(os.path.join(folder, file))
@@ -93,8 +93,8 @@ class SessionManager:
         
         process = await asyncio.create_subprocess_exec(
             generator_executable,
-            '--player_files', self.config['upload_dir'],
-            '--outputpath', self.config['games_dir'],
+            '--player_files', self.config['upload_path'],
+            '--outputpath', self.config['games_path'],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -109,7 +109,7 @@ class SessionManager:
         print("Game generation successful.")
         # Find the generated .zip file
         try:
-            return glob.glob(os.path.join(self.config['games_dir'], '*.zip'))[0]
+            return glob.glob(os.path.join(self.config['games_path'], '*.zip'))[0]
         except IndexError:
             raise FileNotFoundError("Could not find generated game zip file.")
 
@@ -119,11 +119,13 @@ class SessionManager:
         
         args = [
             server_executable,
+            '--host', '0.0.0.0',
             '--port', str(self.config['server_port']),
-            '--multidata', zip_file_path
         ]
         if password:
             args.extend(['--password', password])
+
+        args.append(zip_file_path)
 
         # Start the server process
         self.server_process = await asyncio.create_subprocess_exec(
@@ -135,51 +137,49 @@ class SessionManager:
 
     def _start_chat_bridge(self):
         if self.server_process and self.bridge_channel:
-            self.chat_bridge_task = asyncio.create_task(self._chat_bridge_task())
-        else:
-            print("ERROR: Server process or bridge channel not found. Chat bridge not started.")
+            self.chat_bridge_task = asyncio.create_task(self._chat_bridge_task(
+                self.server_process.stdout,
+                self.server_process.stderr
+            ))
+            print("Chat bridge task started.")
 
-    async def _chat_bridge_task(self):
-        print("Chat bridge task started.")
-        item_sent_pattern = re.compile(r"^(?:\(.+?\)\s)?(.+?)\ssent\s(.+?)\sto\s(.+?)(?:\s\(.+?\))?\.")
-
-        # Silent mentions: Does not trigger a notification
+    async def _chat_bridge_task(self, stdout, stderr):
+        item_sent_pattern = re.compile(r"^(?:\(.+?\)\s)?(.+?)\ssent\s(.+?)\sto\s(.+?)(?:\s\(.+?\))?\.?$")
         silent_mentions = discord.AllowedMentions(users=False)
 
-        while self.server_process and self.server_process.returncode is None:
-            try:
-                line_bytes = await self.server_process.stdout.readline()
-                if not line_bytes:
-                    await asyncio.sleep(0.1)
-                    continue
-                
-                line = line_bytes.decode('utf-8', errors='ignore').strip()
-                if not line:
-                    continue
-
-                print(f"[AP Server]: {line}")
-
-                match = item_sent_pattern.match(line)
-                if match:
-                    sender_name, item_name, receiver_name = match.groups()
-
-                    sender_data = self.players.get(sender_name.strip())
-                    receiver_data = self.players.get(receiver_name.strip())
+        async def log_stream(stream, prefix):
+            while True:
+                try:
+                    line_bytes = await stream.readline()
+                    if not line_bytes: break
                     
-                    sender_mention = sender_data['user'].mention if sender_data else f"**{sender_name}**"
-                    receiver_mention = receiver_data['user'].mention if receiver_data else f"**{receiver_name}**"
+                    line = line_bytes.decode('utf-8', errors='ignore').strip()
+                    if not line: continue
                     
-                    message = f"🎁 {sender_mention} sent **{item_name}** to {receiver_mention}!"
-                    await self.bridge_channel.send(message, allowed_mentions=silent_mentions)
-                else:
-                    if "[Server]:" in line and not line.endswith("joined the game.") and not line.endswith("left the game."):
-                        await self.bridge_channel.send(f"```{line}```")
+                    print(f"[{prefix}]: {line}")
 
-            except asyncio.CancelledError:
-                print("Chat bridge task was cancelled.")
-                break
-            except Exception as e:
-                print(f"Error in chat bridge: {e}")
-        
+                    if prefix == "AP Server STDOUT":
+                        match = item_sent_pattern.match(line)
+                        if match:
+                            sender_name, item_name, receiver_name = match.groups()
+                            
+                            sender_data = self.players.get(sender_name.strip())
+                            receiver_data = self.players.get(receiver_name.strip())
+                            
+                            sender_mention = sender_data['user'].mention if sender_data else f"**{sender_name.strip()}**"
+                            receiver_mention = receiver_data['user'].mention if receiver_data else f"**{receiver_name.strip()}**"
+                            
+                            message = f"🎁 {sender_mention} sent **{item_name.strip()}** to {receiver_mention}!"
+                            await self.bridge_channel.send(message, allowed_mentions=silent_mentions)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"Error reading stream {prefix}: {e}")
+                    break
+
+        await asyncio.gather(
+            log_stream(stdout, "AP Server STDOUT"),
+            log_stream(stderr, "AP Server STDERR")
+        )
         print("Chat bridge loop finished.")
 
