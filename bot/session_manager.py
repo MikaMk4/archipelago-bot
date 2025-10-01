@@ -69,6 +69,17 @@ class SessionManager:
         self.players[new_player.display_name] = {'user': new_player, 'ready': False}
         print(f"Player {new_player.display_name} added to the session.")
         return True, f"{new_player.mention} added to the session."
+    
+    def begin_generation_and_start(self, password: str, channel: discord.TextChannel, release_mode: str = None, collect_mode: str = None, remaining_mode: str = None):
+        if self.state != "preparing":
+            return False, "Session is not in the correct state to start generation."
+        
+        print("State transition: preparing -> generating")
+        self.state = "generating"
+        
+        print("Creating background task for session start...")
+        asyncio.create_task(self._start_session_task(password, channel, release_mode, collect_mode, remaining_mode))
+        return True, "Generation process has been successfully launched."
 
     def set_player_ready(self, player_name: str):
         if player_name in self.players:
