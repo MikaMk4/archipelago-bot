@@ -6,6 +6,7 @@ import yaml
 import glob
 import zipfile
 import json
+from typing import Literal
 from .config import load_config
 from .session_manager import SessionManager
 
@@ -103,8 +104,14 @@ async def upload_yaml(interaction: discord.Interaction, yaml_file: discord.Attac
 
 
 @session_group.command(name="start", description="Starts the game generation and server.")
-@app_commands.describe(password="Optional server password.")
-async def start_session(interaction: discord.Interaction, password: str = None):
+async def start_session(
+        self, 
+        interaction: discord.Interaction, 
+        password: str = None,
+        release_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = None,
+        collect_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = None,
+        remaining_mode: Literal['enabled', 'disabled', 'goal'] = None
+    ):
     await interaction.response.defer()
 
     if not session_manager.is_active() or session_manager.state != "preparing":
@@ -121,8 +128,13 @@ async def start_session(interaction: discord.Interaction, password: str = None):
 
     await interaction.followup.send("Generating and starting game. This may take a while...", ephemeral=True)
     
-    # Pass the current channel to the session manager for the chat bridge
-    status_message = await session_manager.start_session(password, interaction.channel)
+    success, message = session_manager.begin_generation_and_start(
+            password, 
+            interaction.channel,
+            release_mode,
+            collect_mode,
+            remaining_mode
+        )
 
     # Delete the preparation message
     if session_manager.preparation_message:
@@ -132,7 +144,7 @@ async def start_session(interaction: discord.Interaction, password: str = None):
     # Send final confirmation with download links
     final_embed = discord.Embed(
         title="Archipelago Session started!",
-        description=f"Server is reachable through `{config['server_public_ip']}:{config['server_port']}`.\n{status_message}",
+        description=f"Server is reachable through `{config['server_public_ip']}:{config['server_port']}`.\n{message}",
         color=discord.Color.green()
     )
     await interaction.channel.send(embed=final_embed, view=get_patch_files_view())
@@ -184,7 +196,7 @@ async def update_preparation_message(session_manager: SessionManager):
 
 def get_patch_files_view():
     view = discord.ui.View()
-    patch_dir = config.get('patch_dir', 'data/patches')
+    patch_dir = config.get('patches_path', 'data/patches')
     
     # Extract patch files from the generated game zip
     game_zip_path = glob.glob(os.path.join(config['games_path'], '*.zip'))

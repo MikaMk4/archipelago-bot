@@ -114,7 +114,7 @@ class SessionManager:
             raise FileNotFoundError("Could not find generated game zip file.")
 
 
-    async def _run_server(self, zip_file_path, password):
+    async def _run_server(self, zip_file_path: str, password: str, release_mode: str, collect_mode: str, remaining_mode: str):
         server_executable = os.path.join(self.archipelago_path, 'ArchipelagoServer')
         
         args = [
@@ -124,6 +124,13 @@ class SessionManager:
         ]
         if password:
             args.extend(['--password', password])
+
+        if release_mode:
+            args.extend(['--release_mode', release_mode])
+        if collect_mode:
+            args.extend(['--collect_mode', collect_mode])
+        if remaining_mode:
+            args.extend(['--remaining_mode', remaining_mode])
 
         args.append(zip_file_path)
 
