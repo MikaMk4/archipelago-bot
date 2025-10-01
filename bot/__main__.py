@@ -70,7 +70,7 @@ admin_group = app_commands.Group(name="admin", description="Admin commands for t
     player5="Optional: Player 5"
 )
 async def create_session(interaction: discord.Interaction, player1: Member, player2: Optional[Member] = None, player3: Optional[Member] = None, player4: Optional[Member] = None, player5: Optional[Member] = None):
-    if not is_whitelisted(interaction.user.id):
+    if not is_whitelisted(interaction.user.id) and not await bot.is_owner(interaction.user):
         return await interaction.response.send_message("You are not authorized to create a session.", ephemeral=True)
 
     invited_users = {p.id: p.name for p in [player1, player2, player3, player4, player5] if p}
