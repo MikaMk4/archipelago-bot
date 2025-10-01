@@ -25,7 +25,7 @@ def create_session_embed(session: dict):
     host = bot.get_user(session['host_id'])
     embed = discord.Embed(
         title="Archipelago session in preparation",
-        description=f"Host: {host.mention if host else 'Unknown'}\n\\Upload your `.yaml`-files with `/session upload_yaml`.",
+        description=f"Host: {host.mention if host else 'Unknown'}\nUpload your `.yaml`-files with `/session upload_yaml`.",
         color=discord.Color.orange()
     )
     
