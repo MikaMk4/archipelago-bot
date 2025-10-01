@@ -10,7 +10,8 @@ from .config import load_config
 from .session_manager import SessionManager
 
 config = load_config()
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 session_manager = SessionManager(config)
 
