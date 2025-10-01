@@ -90,22 +90,47 @@ class SessionManager:
     def get_player_status(self):
         return list(self.players.values())
 
-    async def start_session(self, password: str, channel: discord.TextChannel):
-        if self.state != "preparing":
-            return "Error: No session is being prepared."
-        
-        self.bridge_channel = channel # Save the channel for the bridge
-
+    async def _start_session_task(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str):
+        self.bridge_channel = channel
         try:
+            if self.preparation_message:
+                await self.preparation_message.delete()
+                self.preparation_message = None
+
             zip_file_path = await self._run_generation()
-            await self._run_server(zip_file_path, password)
+            self._extract_patch_files(zip_file_path)
+            await self._run_server(zip_file_path, password, release_mode, collect_mode, remaining_mode)
+
+            await asyncio.sleep(1) 
+            if not self.server_process or self.server_process.returncode is not None:
+                raise RuntimeError("Server process failed to start or terminated immediately.")
+
+            print("State transition: generating -> running")
             self.state = "running"
             self._start_chat_bridge()
-            return "Session started successfully."
+            print("Background task: Game generated and server started successfully.")
+            
+            connect_address = self.config['server_public_ip']
+            if connect_address in ["127.0.0.1", "localhost"]:
+                 connect_address = "localhost"
+            else:
+                 connect_address = self.config['server_public_ip']
+
+            final_embed = discord.Embed(
+                title="Archipelago Session Gestartet!",
+                description=f"Server is reachable through `{connect_address}:{self.config['server_port']}`.",
+                color=discord.Color.green()
+            )
+            if password:
+                final_embed.add_field(name="Password", value=f"`{password}`", inline=False)
+            
+            await self.bridge_channel.send(embed=final_embed, view=self.get_patch_files_view())
+
         except Exception as e:
-            print(f"ERROR during session start: {e}")
+            error_message = f"An error occurred: {str(e)}"
+            print(f"ERROR during session start: {error_message}")
+            await self.bridge_channel.send(f"Error at starting session for host {self.host.mention}:\n```\n{error_message}\n```")
             self.reset_session()
-            return f"Error starting session: {e}"
 
     async def _run_generation(self):
         generator_executable = os.path.join(self.archipelago_path, 'ArchipelagoGenerate')
