@@ -148,7 +148,7 @@ class SessionManager:
 
                 line = line_bytes.decode('utf-8', errors='ignore').strip()
                 print(f"[Server] {line}")
-                if "sent" in line and "to" in line and "found" in line:
+                if "sent" in line and "to" in line:
                     await channel.send(f"**[Item-Info]** {line}")
                 
                 chat_match = re.search(r"\[Chat\]:\s*(.*)", line)
