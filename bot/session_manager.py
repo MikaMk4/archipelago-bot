@@ -1,160 +1,185 @@
 import asyncio
-import glob
 import os
-import shutil
-import zipfile
 import re
+import discord
+import yaml
+import glob
+from .config import load_config
 
 class SessionManager:
-    def __init__(self, config):
-        self.config = config
+    def __init__(self):
+        self.config = load_config()
+        self.state = "inactive"  # "inactive", "preparing", "running"
+        self.host = None
+        self.players = {}  # Map: slot_name -> {'user': discord.User, 'ready': bool}
+        self.preparation_message = None
+        self.archipelago_path = "/opt/archipelago/squashfs-root"
         self.server_process = None
-        self.running_session_admin_id = None
-        self.staged_sessions = {}
+        self.chat_bridge_task = None
+        self.bridge_channel = None
 
-    def is_server_running(self):
-        return self.server_process is not None and self.server_process.returncode is None
-    
-    def is_admin(self, user_id: int):
-        return user_id == self.running_session_admin_id
-    
-    def get_admin(self):
-        return self.running_session_admin_id
-    
-    def get_staged_session(self, host_id: int):
-        return self.staged_sessions.get(host_id)
-    
-    def get_session_for_player(self, player_id: int):
-        for host_id, session in self.staged_sessions.items():
-            if player_id in session["players"]:
-                return session
-        return None
-    
-    def _cleanup_session_files(self, session_id: str):
-        for dir_key in ['upload_path', 'games_path', 'patches_path']:
-            path = os.path.join(self.config[dir_key], str(session_id))
-            if os.path.exists(path):
-                shutil.rmtree(path)
+    def is_active(self):
+        return self.state != "inactive"
 
-    def stage_session(self, host_id: int, invited_players: dict, channel_id: int):
-        """Starts the preparation phase of a session."""
-        if self.is_server_running():
-            return {'success': False, 'message': 'A session is already running.'}
-        if host_id in self.staged_sessions:
-            return {'success': False, 'message': 'You are already preparing a session. Cancel that first with `/session cancel`.'}
+    def reset_session(self):
+        self.state = "inactive"
+        self.host = None
+        self.players = {}
+        self.preparation_message = None
+        self.bridge_channel = None
         
-        session_id = str(host_id)
-        self._cleanup_session_files(session_id)
-        os.makedirs(os.path.join(self.config['upload_path'], session_id), exist_ok=True)
+        # Terminate running processes
+        if self.server_process and self.server_process.returncode is None:
+            self.server_process.terminate()
+        if self.chat_bridge_task:
+            self.chat_bridge_task.cancel()
+        
+        self.server_process = None
+        self.chat_bridge_task = None
 
-        self.staged_sessions[host_id] = {
-            "session_id": session_id,
-            "host_id": host_id,
-            "channel_id": host_id,
-            "message_id": None,
-            "players": {player_id: {"name": name, "has_uploaded": False} for player_id, name in invited_players.items()}
-        }
+        # Clean up directories
+        for folder in [self.config['upload_dir'], self.config['games_dir'], self.config['patch_dir']]:
+            if os.path.exists(folder):
+                for file in os.listdir(folder):
+                    os.remove(os.path.join(folder, file))
+        print("Session reset and directories cleaned.")
 
-        return {'success': True}
-    
-    def add_yaml_to_staged_session(self, session: dict, player_id: int, attachment):
-        session_id = session['session_id']
-        player_slot_name = os.path.splitext(attachment.filename)[0] # Name in yaml file TODO: change to not rely on index
-        save_path = os.path.join(self.config['upload_path'], session_id, f"{player_id}_{player_slot_name}.yaml")
 
-        session["players"][player_id]["has_uploaded"] = True
-        return save_path
-    
-    def cancel_staged_session(self, host_id: int):
-        if host_id in self.staged_sessions:
-            session_id = self.staged_sessions[host_id]["session_id"]
-            self._cleanup_session_files(session_id)
-            del self.staged_sessions[host_id]
+    async def create_session(self, host: discord.User, players: list[discord.User]):
+        if self.is_active():
+            return False, "A session is already active or being prepared."
+        
+        self.reset_session()
+        self.state = "preparing"
+        self.host = host
+        
+        # Use display_name as it can be the server nickname.
+        self.players = {member.display_name: {'user': member, 'ready': False} for member in players}
+        
+        # Also add the host to the players if they weren't tagged
+        if host.display_name not in self.players:
+            self.players[host.display_name] = {'user': host, 'ready': False}
+            
+        return True, "Session created successfully."
+
+    def set_player_ready(self, player_name: str):
+        if player_name in self.players:
+            self.players[player_name]['ready'] = True
             return True
         return False
+        
+    def get_player_status(self):
+        return list(self.players.values())
 
-    async def generate_game(self, session_id: str):
-        """Generates a game for a specific session id."""
-        upload_path = os.path.join(self.config['upload_path'], session_id)
-        games_path = os.path.join(self.config['games_path'], session_id)
-        os.makedirs(games_path, exist_ok=True)
+    async def start_session(self, password: str, channel: discord.TextChannel):
+        if self.state != "preparing":
+            return "Error: No session is being prepared."
+        
+        self.bridge_channel = channel # Save the channel for the bridge
 
-        generator_path = os.path.join(self.config['archipelago_path'], 'ArchipelagoGenerate')
+        try:
+            zip_file_path = await self._run_generation()
+            await self._run_server(zip_file_path, password)
+            self.state = "running"
+            self._start_chat_bridge()
+            return "Session started successfully."
+        except Exception as e:
+            print(f"ERROR during session start: {e}")
+            self.reset_session()
+            return f"Error starting session: {e}"
+
+    async def _run_generation(self):
+        generator_executable = os.path.join(self.archipelago_path, 'ArchipelagoGenerate')
         
         process = await asyncio.create_subprocess_exec(
-            generator_path,
-            '--player_files', upload_path,
-            '--outputpath', games_path,
+            generator_executable,
+            '--player_files', self.config['upload_dir'],
+            '--outputpath', self.config['games_dir'],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            return {'success': False, 'output': stderr.decode()}
-        return {'success': True, 'output': stdout.decode()}
+            error_message = stderr.decode().strip()
+            print(f"Generation failed: {error_message}")
+            raise RuntimeError(f"Game generation failed: {error_message}")
 
-    async def host_game(self, session_id: str, admin_id: int, password: str = None):
-        """Hosts the generated game and changes status from staged to running."""
-        games_path = os.path.join(self.config['games_path'], session_id)
-        patches_path = os.path.join(self.config['patches_path'], session_id)
-        os.makedirs(patches_path, exist_ok=True)
-        
+        print("Game generation successful.")
+        # Find the generated .zip file
         try:
-            game_zip = glob.glob(os.path.join(games_path, '*.zip'))[0]
+            return glob.glob(os.path.join(self.config['games_dir'], '*.zip'))[0]
         except IndexError:
-            return {'success': False, 'output': 'Keine .zip-Datei im Output-Ordner gefunden.'}
+            raise FileNotFoundError("Could not find generated game zip file.")
 
-        patch_files = []
-        with zipfile.ZipFile(game_zip, 'r') as zip_ref:
-            for file_info in zip_ref.infolist():
-                if file_info.filename.endswith(('.apz5', '.apbp', '.apmc', '.apv6', '.apsb', '.aptww', '.aplttp', '.apsoe', '.apct', '.apoot', '.apmm', '.apss')):
-                    zip_ref.extract(file_info, patches_path)
-                    patch_files.append(os.path.join(patches_path, file_info.filename))
 
-        server_path = os.path.join(self.config['archipelago_path'], 'ArchipelagoServer')
-        args = [server_path, '--port', str(self.config['archipelago_port']), game_zip]
+    async def _run_server(self, zip_file_path, password):
+        server_executable = os.path.join(self.archipelago_path, 'ArchipelagoServer')
+        
+        args = [
+            server_executable,
+            '--port', str(self.config['server_port']),
+            '--multidata', zip_file_path
+        ]
         if password:
             args.extend(['--password', password])
-            
+
+        # Start the server process
         self.server_process = await asyncio.create_subprocess_exec(
-            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        
-        # Change status
-        self.running_session_admin_id = admin_id
-        if admin_id in self.staged_sessions:
-            del self.staged_sessions[admin_id]
+        print(f"Server started with PID: {self.server_process.pid}")
 
-        return {'success': True, 'patches': patch_files}
+    def _start_chat_bridge(self):
+        if self.server_process and self.bridge_channel:
+            self.chat_bridge_task = asyncio.create_task(self._chat_bridge_task())
+        else:
+            print("ERROR: Server process or bridge channel not found. Chat bridge not started.")
 
-    def stop_game(self):
-        if self.is_server_running():
-            session_id = str(self.running_session_admin_id)
-            self.server_process.terminate()
-            self.server_process = None
-            self.running_session_admin_id = None
-            self._cleanup_session_files(session_id)
+    async def _chat_bridge_task(self):
+        print("Chat bridge task started.")
+        item_sent_pattern = re.compile(r"^(?:\(.+?\)\s)?(.+?)\ssent\s(.+?)\sto\s(.+?)(?:\s\(.+?\))?\.")
 
-    async def chat_bridge(self, channel):
-        """Reads server output and forwards relevant messages to Discord."""
-        if not self.is_server_running(): return
-            
-        while self.is_server_running():
+        # Silent mentions: Does not trigger a notification
+        silent_mentions = discord.AllowedMentions(users=False)
+
+        while self.server_process and self.server_process.returncode is None:
             try:
                 line_bytes = await self.server_process.stdout.readline()
                 if not line_bytes:
-                    await asyncio.sleep(1); continue
-
-                line = line_bytes.decode('utf-8', errors='ignore').strip()
-                print(f"[Server] {line}")
-                if "sent" in line and "to" in line:
-                    await channel.send(f"**[Item-Info]** {line}")
+                    await asyncio.sleep(0.1)
+                    continue
                 
-                chat_match = re.search(r"\[Chat\]:\s*(.*)", line)
-                if chat_match:
-                    await channel.send(f"**[In-Game Chat]** {chat_match.group(1)}")
+                line = line_bytes.decode('utf-8', errors='ignore').strip()
+                if not line:
+                    continue
 
+                print(f"[AP Server]: {line}")
+
+                match = item_sent_pattern.match(line)
+                if match:
+                    sender_name, item_name, receiver_name = match.groups()
+
+                    sender_data = self.players.get(sender_name.strip())
+                    receiver_data = self.players.get(receiver_name.strip())
+                    
+                    sender_mention = sender_data['user'].mention if sender_data else f"**{sender_name}**"
+                    receiver_mention = receiver_data['user'].mention if receiver_data else f"**{receiver_name}**"
+                    
+                    message = f"🎁 {sender_mention} sent **{item_name}** to {receiver_mention}!"
+                    await self.bridge_channel.send(message, allowed_mentions=silent_mentions)
+                else:
+                    if "[Server]:" in line and not line.endswith("joined the game.") and not line.endswith("left the game."):
+                        await self.bridge_channel.send(f"```{line}```")
+
+            except asyncio.CancelledError:
+                print("Chat bridge task was cancelled.")
+                break
             except Exception as e:
-                print(f"Error in chat bridge: {e}"); break
-        print("Chat bridge terminated.")
+                print(f"Error in chat bridge: {e}")
+        
+        print("Chat bridge loop finished.")
+
