@@ -31,6 +31,24 @@ async def on_ready():
     await tree.sync(guild=discord.Object(id=config['guild_id']))
     print(f'Bot {bot.user} is online and synced with Guild ID {config["guild_id"]}.')
 
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type == discord.InteractionType.component and interaction.data['custom_id'].startswith("patch_download::"):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
+        custom_id = interaction.data['custom_id']
+        try:
+            filename = custom_id.split('::')[1]
+            file_path = os.path.join(config['patches_path'], filename)
+            
+            if os.path.exists(file_path):
+                await interaction.followup.send(file=discord.File(file_path))
+            else:
+                await interaction.followup.send(f"Error: File {filename} not found.", ephemeral=True)
+        except Exception as e:
+            print(f"Error during patch download interaction: {e}")
+            await interaction.followup.send("An error occurred while processing your request.", ephemeral=True)
+
 session_group = app_commands.Group(name="session", description="Commands to manage Archipelago sessions.")
 
 @session_group.command(name="create", description="Starts the preparation for a new session.")
@@ -135,13 +153,7 @@ async def start_session(
         await session_manager.preparation_message.delete()
         session_manager.preparation_message = None
 
-    # Send final confirmation with download links
-    final_embed = discord.Embed(
-        title="Archipelago Session started!",
-        description=f"Server is reachable through `{config['server_public_ip']}:{config['server_port']}`.\n{message}",
-        color=discord.Color.green()
-    )
-    await interaction.channel.send(embed=final_embed, view=get_patch_files_view())
+    await interaction.followup.send("Game generation started in the background. You will be notified when it's ready.")
 
 
 @session_group.command(name="cancel", description="Cancels the current session preparation or running game.")

@@ -4,6 +4,7 @@ import re
 import discord
 import yaml
 import glob
+import zipfile
 from .config import load_config
 
 class SessionManager:
@@ -106,6 +107,16 @@ class SessionManager:
             self._start_chat_bridge()
             print("Background task: Game generated and server started successfully.")
 
+            final_embed = discord.Embed(
+                title="Archipelago Session Started!",
+                description=f"The server is reachable at `{self.config['server_public_ip']}:{self.config['server_port']}`.",
+                color=discord.Color.green()
+            )
+            if password:
+                final_embed.add_field(name="Password", value=f"`{password}`", inline=False)
+            
+            await self.bridge_channel.send(embed=final_embed, view=self.get_patch_files_view())
+
         except Exception as e:
             error_message = f"An error occurred: {str(e)}"
             print(f"ERROR during session start: {error_message}")
@@ -165,6 +176,59 @@ class SessionManager:
             stderr=asyncio.subprocess.PIPE
         )
         print(f"Server started with PID: {self.server_process.pid}")
+
+    def _extract_patch_files(self, zip_file_path: str):
+        """
+        Opens the generated zip file and extracts all patch files into the patch directory
+        by checking for the '.ap' signature in the file extension.
+        """
+        patch_dir = self.config['patches_path']
+        os.makedirs(patch_dir, exist_ok=True)
+
+        print(f"Extracting patch files from {zip_file_path} to {patch_dir}")
+        try:
+            with zipfile.ZipFile(zip_file_path, 'r') as archive:
+                for file_info in archive.infolist():
+                    # Ignore directories
+                    if file_info.is_dir():
+                        continue
+                    
+                    # Split the filename into name and extension
+                    _filename, extension = os.path.splitext(file_info.filename)
+                    
+                    # Check if '.ap' is in the extension (e.g., '.apz5', '.aplttp')
+                    if '.ap' in extension.lower():
+                        # Extract the file to the root of the patch directory
+                        archive.extract(file_info, path=patch_dir)
+                        print(f"  - Extracted {file_info.filename}")
+
+        except FileNotFoundError:
+            print(f"ERROR: Could not find zip file at {zip_file_path} to extract patches.")
+        except Exception as e:
+            print(f"An error occurred during patch extraction: {e}")
+
+    def get_patch_files_view(self) -> discord.ui.View:
+        view = discord.ui.View(timeout=None) # timeout=None makes the view persistent
+        
+        patch_dir = self.config['patches_path']
+        if not os.path.exists(patch_dir):
+            return view # Return an empty view if the directory doesn't exist
+
+        patch_files = glob.glob(os.path.join(patch_dir, '*.ap*'))
+        
+        if not patch_files:
+            button = discord.ui.Button(label="No patch files found.", style=discord.ButtonStyle.secondary, disabled=True)
+            view.add_item(button)
+            return view
+
+        for i, patch_file_path in enumerate(patch_files):
+            filename = os.path.basename(patch_file_path)
+            custom_id = f"patch_download::{filename[:80]}"
+            
+            button = discord.ui.Button(label=f"{filename}", custom_id=custom_id, style=discord.ButtonStyle.primary, emoji="📄")
+            view.add_item(button)
+            
+        return view
 
     def _start_chat_bridge(self):
         if self.server_process and self.bridge_channel:
