@@ -6,8 +6,8 @@ import asyncio
 import json
 from typing import Optional
 
-from config import load_config
-from session_manager import SessionManager
+from .config import load_config
+from .session_manager import SessionManager
 
 config = load_config()
 intents = discord.Intents.all()
