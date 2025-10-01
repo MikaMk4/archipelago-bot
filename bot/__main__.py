@@ -94,9 +94,9 @@ async def upload_yaml(interaction: discord.Interaction, yaml_file: discord.Attac
 async def start_session(
         interaction: discord.Interaction, 
         password: str = None,
-        release_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = None,
-        collect_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = None,
-        remaining_mode: Literal['enabled', 'disabled', 'goal'] = None
+        release_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = 'auto',
+        collect_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = 'auto',
+        remaining_mode: Literal['enabled', 'disabled', 'goal'] = 'goal'
     ):
     await interaction.response.defer()
 
@@ -111,6 +111,14 @@ async def start_session(
     if not all(p['ready'] for p in session_manager.get_player_status()):
         await interaction.followup.send("Not everyone has uploaded their YAML yet.", ephemeral=True)
         return
+    
+    if session_manager.preparation_message:
+        try:
+            await session_manager.preparation_message.delete()
+            session_manager.preparation_message = None
+        except discord.NotFound:
+            print("Warning: Preparation message was already deleted before start command.")
+            pass
 
     await interaction.followup.send("Generating and starting game. This may take a while...", ephemeral=True)
     
