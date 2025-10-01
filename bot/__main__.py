@@ -51,6 +51,23 @@ async def on_interaction(interaction: discord.Interaction):
 
 session_group = app_commands.Group(name="session", description="Commands to manage Archipelago sessions.")
 
+@session_group.command(name="whitelist", description="Adds a user to the bot's whitelist.")
+async def whitelist_user(interaction: discord.Interaction, user: discord.Member):
+    if not await bot.is_owner(interaction.user):
+        await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+        return
+
+    whitelist = get_whitelist()
+    if user.id in whitelist:
+        await interaction.response.send_message(f"{user.mention} is already whitelisted.", ephemeral=True)
+        return
+
+    whitelist.append(user.id)
+    with open(config['whitelist_path'], 'w') as f:
+        json.dump(whitelist, f)
+
+    await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
+
 @session_group.command(name="create", description="Starts the preparation for a new session.")
 async def create_session(interaction: discord.Interaction):
     if not is_whitelisted(interaction.user.id) and not await bot.is_owner(interaction.user):
@@ -195,6 +212,10 @@ async def add_player(interaction: discord.Interaction, new_player: discord.Membe
 
 
 # --- Helper Functions ---
+def get_whitelist():
+    if not os.path.exists(config['whitelist_path']): return []
+    with open(config['whitelist_path'], 'r') as f: return json.load(f)
+
 async def _update_preparation_embed():
     if not session_manager.preparation_message:
         return
