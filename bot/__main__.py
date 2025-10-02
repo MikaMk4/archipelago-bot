@@ -32,6 +32,7 @@ class ArchipelagoBot(commands.Bot):
         # Sync application commands to guild
         guild = discord.Object(id=config['guild_id'])
         self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
         print("Commands synced.")
 
     async def on_ready(self):
