@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 
 import discord
 from discord.ext import commands
@@ -50,6 +51,17 @@ class ArchipelagoBot(commands.Bot):
 async def main():
     bot = ArchipelagoBot()
 
+    # Shutdown handler
+    async def shutdown(sig, loop):
+        print(f"Received exit signal {sig.name}...")
+        print("Closing bot connection and cleaning up...")
+        await bot.session_manager.shutdown_gracefully()
+        await bot.close()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s, loop)))
+
     # --- Global Event Listeners ---
     @bot.event
     async def on_interaction(interaction: discord.Interaction):
@@ -69,7 +81,16 @@ async def main():
                 print(f"Error during patch download interaction: {e}")
                 await interaction.followup.send("An error occurred while processing your request.", ephemeral=True)
 
-    await bot.start(config['discord_token'])
+    try:
+        async with bot:
+            await bot.start(config['discord_token'])
+    except asyncio.CancelledError:
+        pass
+    finally:
+        print("Bot has shut down.")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Shutdown requested by user (Ctrl+C).")
