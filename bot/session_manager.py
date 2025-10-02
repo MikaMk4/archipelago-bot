@@ -132,6 +132,7 @@ class SessionManager:
             generator_executable,
             '--player_files', config['upload_path'],
             '--outputpath', config['games_path'],
+            '--custom_worlds_path', config['custom_worlds_path'],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

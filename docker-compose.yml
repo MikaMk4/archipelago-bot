@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
+      - ./custom_worlds:/app/custom_worlds
     env_file:
       - .env
     ports:
