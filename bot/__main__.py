@@ -14,7 +14,7 @@ class ArchipelagoBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = True
 
-        super().__init__(intents=intents)
+        super().__init__(command_prefix="!", intents=intents)
 
         self.session_manager = SessionManager()
 
