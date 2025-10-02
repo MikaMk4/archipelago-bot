@@ -30,12 +30,6 @@ class ArchipelagoBot(commands.Bot):
                 except Exception as e:
                     print(f"Failed to load cog {filename}: {e}")
 
-        # Sync application commands to guild
-        guild = discord.Object(id=config['guild_id'])
-        self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
-        print("Commands synced.")
-
     async def on_ready(self):
 
         activity = discord.Activity(
