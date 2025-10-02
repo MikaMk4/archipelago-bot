@@ -24,7 +24,7 @@ class ArchipelagoBot(commands.Bot):
         for filename in os.listdir("./bot/cogs"):
             if filename.endswith(".py"):
                 try:
-                    await self.load_extension(f"bot.cogs.{filename[:3]}")
+                    await self.load_extension(f"bot.cogs.{filename[:-3]}")
                     print(f"Successfully loaded cog {filename}")
                 except Exception as e:
                     print(f"Failed to load cog {filename}: {e}")
