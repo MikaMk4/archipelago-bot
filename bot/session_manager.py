@@ -6,17 +6,17 @@ import zipfile
 
 import discord
 
-from .config import load_config
+from bot.config import load_config
 
+config = load_config()
 
 class SessionManager:
     def __init__(self):
-        self.config = load_config()
         self.state = "inactive"  # "inactive", "preparing", "running"
         self.host = None
         self.players = {}  # Map: slot_name -> {'user': discord.User, 'ready': bool}
         self.preparation_message = None
-        self.archipelago_path = self.config['archipelago_path']
+        self.archipelago_path = config['archipelago_path']
         self.server_process = None
         self.chat_bridge_task = None
         self.bridge_channel = None
@@ -41,7 +41,7 @@ class SessionManager:
         self.chat_bridge_task = None
 
         # Clean up directories
-        for folder in [self.config['upload_path'], self.config['games_path'], self.config['patches_path']]:
+        for folder in [config['upload_path'], config['games_path'], config['patches_path']]:
             if os.path.exists(folder):
                 for file in os.listdir(folder):
                     os.remove(os.path.join(folder, file))
@@ -111,7 +111,7 @@ class SessionManager:
 
             final_embed = discord.Embed(
                 title="Archipelago Session Started!",
-                description=f"The server is reachable at `{self.config['server_public_ip']}:{self.config['server_port']}`.",
+                description=f"The server is reachable at `{config['server_public_ip']}:{config['server_port']}`.",
                 color=discord.Color.green()
             )
             if password:
@@ -130,8 +130,8 @@ class SessionManager:
         
         process = await asyncio.create_subprocess_exec(
             generator_executable,
-            '--player_files', self.config['upload_path'],
-            '--outputpath', self.config['games_path'],
+            '--player_files', config['upload_path'],
+            '--outputpath', config['games_path'],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -146,7 +146,7 @@ class SessionManager:
         print("Game generation successful.")
         # Find the generated .zip file
         try:
-            return glob.glob(os.path.join(self.config['games_path'], '*.zip'))[0]
+            return glob.glob(os.path.join(config['games_path'], '*.zip'))[0]
         except IndexError:
             raise FileNotFoundError("Could not find generated game zip file.")
 
@@ -157,7 +157,7 @@ class SessionManager:
         args = [
             server_executable,
             '--host', '0.0.0.0',
-            '--port', str(self.config['server_port']),
+            '--port', str(config['server_port']),
         ]
         if password:
             args.extend(['--password', password])
@@ -184,7 +184,7 @@ class SessionManager:
         Opens the generated zip file and extracts all patch files into the patch directory
         by checking for the '.ap' signature in the file extension.
         """
-        patch_dir = self.config['patches_path']
+        patch_dir = config['patches_path']
         os.makedirs(patch_dir, exist_ok=True)
 
         print(f"Extracting patch files from {zip_file_path} to {patch_dir}")
@@ -212,7 +212,7 @@ class SessionManager:
     def get_patch_files_view(self) -> discord.ui.View:
         view = discord.ui.View(timeout=None) # timeout=None makes the view persistent
         
-        patch_dir = self.config['patches_path']
+        patch_dir = config['patches_path']
         if not os.path.exists(patch_dir):
             return view # Return an empty view if the directory doesn't exist
 

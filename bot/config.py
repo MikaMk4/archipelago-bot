@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 
 
 def load_config():
-     load_dotenv()
+    load_dotenv()
 
-     return {
+    return {
         "discord_token": os.getenv("DISCORD_TOKEN"),
         "guild_id": int(os.getenv("GUILD_ID")) if os.getenv("GUILD_ID") else None,
         "server_public_ip": os.getenv("SERVER_PUBLIC_IP"),
