@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 
 import discord
 from discord.ext import commands
@@ -29,18 +30,31 @@ class ArchipelagoBot(commands.Bot):
                 except Exception as e:
                     print(f"Failed to load cog {filename}: {e}")
 
-        # Sync application commands to guild
-        guild = discord.Object(id=config['guild_id'])
-        self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
-        print("Commands synced.")
-
     async def on_ready(self):
+
+        activity = discord.Activity(
+            type=discord.ActivityType.playing,
+            name="Archipelago"
+        )
+        await self.change_presence(activity=activity, status=discord.Status.online)
+
         print(f"Logged in as {self.user} (ID: {self.user.id})")
+        print(f"Set status to online and activity to {activity.name}")
         print("-------")
 
 async def main():
     bot = ArchipelagoBot()
+
+    # Shutdown handler
+    async def shutdown(sig, loop):
+        print(f"Received exit signal {sig.name}...")
+        print("Closing bot connection and cleaning up...")
+        await bot.session_manager.shutdown_gracefully()
+        await bot.close()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s, loop)))
 
     # --- Global Event Listeners ---
     @bot.event
@@ -61,7 +75,16 @@ async def main():
                 print(f"Error during patch download interaction: {e}")
                 await interaction.followup.send("An error occurred while processing your request.", ephemeral=True)
 
-    await bot.start(config['discord_token'])
+    try:
+        async with bot:
+            await bot.start(config['discord_token'])
+    except asyncio.CancelledError:
+        pass
+    finally:
+        print("Bot has shut down.")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Shutdown requested by user (Ctrl+C).")

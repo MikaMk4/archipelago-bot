@@ -281,4 +281,23 @@ class SessionManager:
             log_stream(stderr, "AP Server STDERR")
         )
         print("Chat bridge loop finished.")
+        
+    async def shutdown_gracefully(self):
+        print("Shutting down server process...")
+        if self.state == "running" and self.server_process:
+            print("Terminating server process...")
+            try:
+                self.server_process.terminate()
+                await self.server_process.wait()
+                print("Server process terminated.")
+            except ProcessLookupError:
+                print("Server process already terminated.")
+            except Exception as e:
+                print(f"Error terminating server process: {e}")
 
+        if self.chat_bridge_task and not self.chat_bridge_task.done():
+            self.chat_bridge_task.cancel()
+            print("Chat bridge task cancelled.")
+
+        self.reset_session()
+        print("Session manager state reset.")
