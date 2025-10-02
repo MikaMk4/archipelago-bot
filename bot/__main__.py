@@ -36,7 +36,15 @@ class ArchipelagoBot(commands.Bot):
         print("Commands synced.")
 
     async def on_ready(self):
+
+        activity = discord.Activity(
+            type=discord.ActivityType.playing,
+            name="Archipelago"
+        )
+        await self.change_presence(activity=activity, status=discord.Status.online)
+
         print(f"Logged in as {self.user} (ID: {self.user.id})")
+        print(f"Set status to online and activity to {activity.name}")
         print("-------")
 
 async def main():
