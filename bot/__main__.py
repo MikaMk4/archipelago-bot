@@ -1,12 +1,14 @@
-import discord
-from discord.ext import commands
-from discord import app_commands
-import os
-import yaml
 import glob
-import zipfile
 import json
+import os
+import zipfile
 from typing import Literal
+
+import discord
+import yaml
+from discord import app_commands
+from discord.ext import commands
+
 from .config import load_config
 from .session_manager import SessionManager
 
@@ -21,8 +23,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 def get_whitelist():
-    if not os.path.exists(config['whitelist_path']): return []
-    with open(config['whitelist_path'], 'r') as f: return json.load(f)
+    if not os.path.exists(config['whitelist_path']):
+        return []
+    with open(config['whitelist_path'], 'r') as f:
+        return json.load(f)
 
 def is_whitelisted(user_id: int): return user_id in get_whitelist()
 
@@ -212,10 +216,6 @@ async def add_player(interaction: discord.Interaction, new_player: discord.Membe
 
 
 # --- Helper Functions ---
-def get_whitelist():
-    if not os.path.exists(config['whitelist_path']): return []
-    with open(config['whitelist_path'], 'r') as f: return json.load(f)
-
 async def _update_preparation_embed():
     if not session_manager.preparation_message:
         return

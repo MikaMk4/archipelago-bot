@@ -1,11 +1,13 @@
 import asyncio
+import glob
 import os
 import re
-import discord
-import yaml
-import glob
 import zipfile
+
+import discord
+
 from .config import load_config
+
 
 class SessionManager:
     def __init__(self):
@@ -246,10 +248,12 @@ class SessionManager:
             while True:
                 try:
                     line_bytes = await stream.readline()
-                    if not line_bytes: break
+                    if not line_bytes:
+                        break
                     
                     line = line_bytes.decode('utf-8', errors='ignore').strip()
-                    if not line: continue
+                    if not line:
+                        continue
                     
                     print(f"[{prefix}]: {line}")
 
