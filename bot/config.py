@@ -16,5 +16,6 @@ def load_config():
         "whitelist_path": "/app/data/whitelist.json",
         "upload_path": "/app/data/uploads",
         "games_path": "/app/data/games",
-        "patches_path": "/app/data/patches"
+        "patches_path": "/app/data/patches",
+        "custom_worlds_path": "custom_worlds"
     }
