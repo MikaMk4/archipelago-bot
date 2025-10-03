@@ -17,5 +17,4 @@ def load_config():
         "upload_path": "/app/data/uploads",
         "games_path": "/app/data/games",
         "patches_path": "/app/data/patches",
-        "custom_worlds_path": "custom_worlds"
     }
