@@ -48,14 +48,13 @@ class SessionManager:
         print("Session reset and directories cleaned.")
 
 
-    async def create_session(self, host: discord.User, anchor_message: discord.WebhookMessage):
+    async def create_session(self, host: discord.User):
         if self.is_active():
             return False, "A session is already active or being prepared."
         
         self.reset_session()
         self.state = "preparing"
         self.host = host
-        self.anchor_message = anchor_message
         
         # Add the host to the players
         if host.display_name not in self.players:

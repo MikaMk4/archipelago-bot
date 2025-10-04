@@ -27,17 +27,15 @@ class SessionCog(commands.Cog):
         
         await interaction.response.defer()
 
-        anchor_message = interaction.original_response()
 
-        success, message = await self.session_manager.create_session(interaction.user, anchor_message)
+        success, message = await self.session_manager.create_session(interaction.user)
 
         if not success:
             await interaction.followup.send(message, ephemeral=True)
             return
 
-        # Create and send the initial status message
-        await interaction.followup.send("Session preparation started. Players can now upload their YAML files.")
-        self.session_manager.anchor_message = anchor_message
+        await interaction.followup.send(message, ephemeral=True)
+        self.session_manager.anchor_message = interaction.original_response()
         await _update_preparation_embed(self.session_manager)
 
     @session_group.command(name="add_player", description="Add a player to the current session.")
