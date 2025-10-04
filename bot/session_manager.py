@@ -117,11 +117,6 @@ class SessionManager:
             if not self.server_process or self.server_process.returncode is not None:
                 raise RuntimeError("Server process failed to start or terminated immediately.")
 
-            print("State transition: generating -> running")
-            self.state = "running"
-            self._start_chat_bridge()
-            print("Background task: Game generated and server started successfully.")
-
             final_embed = discord.Embed(
                 title="Archipelago Session Started!",
                 description=f"The server is reachable at `{config['server_public_ip']}:{config['server_port']}`.",
@@ -133,6 +128,11 @@ class SessionManager:
             thread_name = f"Archipelago session - host: {self.host.display_name}"
             main_message = await channel.send(embed=final_embed, content=f"Session has started.", view=self.get_patch_files_view())
             self.bridge_thread = await main_message.create_thread(name=thread_name, auto_archive_duration=1440)
+
+            print("State transition: generating -> running")
+            self.state = "running"
+            self._start_chat_bridge()
+            print("Background task: Game generated and server started successfully.")
 
         except Exception as e:
             print(f"ERROR during session start: {e}")
