@@ -131,7 +131,7 @@ class SessionManager:
                 final_embed.add_field(name="Password", value=f"`{password}`", inline=False)
 
             thread_name = f"Archipelago session - host: {self.host.display_name}"
-            main_message = await channel.send(embed=final_embed, content=f"Session has started.")
+            main_message = await channel.send(embed=final_embed, content=f"Session has started.", view=self.get_patch_files_view())
             self.bridge_thread = await main_message.create_thread(name=thread_name, auto_archive_duration=1440)
 
         except Exception as e:
