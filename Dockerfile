@@ -17,12 +17,12 @@ RUN cd /opt/archipelago && ./Archipelago.AppImage --appimage-extract
 
 RUN test -f /opt/archipelago/squashfs-root/opt/Archipelago/ArchipelagoGenerate || (echo "ERROR: ArchipelagoGenerate was not found after unpacking!" && exit 1)
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -U pip
-RUN pip install --no-cache-dir .
+COPY pyproject.toml pdm.lock ./
+RUN pip install --no-cache-dir pdm
+RUN pdm install --prod --no-editable
 
 COPY ./bot /app/bot
 
 RUN mkdir -p /app/data/uploads /app/data/games /app/data/patches
 
-CMD ["python", "-m", "bot"]
+CMD ["pdm", "run", "python", "-m", "bot"]
