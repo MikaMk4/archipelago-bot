@@ -15,11 +15,11 @@ class SessionManager:
         self.state = "inactive"  # "inactive", "preparing", "running"
         self.host = None
         self.players = {}  # Map: slot_name -> {'user': discord.User, 'ready': bool}
-        self.preparation_message = None
         self.archipelago_path = config['archipelago_path']
         self.server_process = None
         self.chat_bridge_task = None
-        self.bridge_channel = None
+        self.anchor_message = None
+        self.bridge_thread = None
 
     def is_active(self):
         return self.state != "inactive"
@@ -28,8 +28,8 @@ class SessionManager:
         self.state = "inactive"
         self.host = None
         self.players = {}
-        self.preparation_message = None
-        self.bridge_channel = None
+        self.anchor_message = None
+        self.bridge_thread = None
         
         # Terminate running processes
         if self.server_process and self.server_process.returncode is None:
@@ -48,13 +48,14 @@ class SessionManager:
         print("Session reset and directories cleaned.")
 
 
-    async def create_session(self, host: discord.User):
+    async def create_session(self, host: discord.User, anchor_message: discord.WebhookMessage):
         if self.is_active():
             return False, "A session is already active or being prepared."
         
         self.reset_session()
         self.state = "preparing"
         self.host = host
+        self.anchor_message = anchor_message
         
         # Add the host to the players
         if host.display_name not in self.players:
@@ -94,8 +95,14 @@ class SessionManager:
         return list(self.players.values())
 
     async def _start_session_task(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str):
-        self.bridge_channel = channel
         try:
+            thread_name = f"Archipelago session - host: {self.host.display_name}"
+            self.bridge_thread = await channel.create_thread(name=thread_name, type=discord.ChannelType.public_thread, auto_archive_duration=1440)
+            await self.bridge_thread.send(f"Session thread created for host {self.host.mention}.")
+
+            await self.anchor_message.edit(content=f"Session started by {self.host.mention}. Join the thread: {self.bridge_thread.mention}")
+            self.anchor_message = None
+
             zip_file_path = await self._run_generation()
             self._extract_patch_files(zip_file_path)
             await self._run_server(zip_file_path, password, release_mode, collect_mode, remaining_mode)
@@ -117,12 +124,12 @@ class SessionManager:
             if password:
                 final_embed.add_field(name="Password", value=f"`{password}`", inline=False)
             
-            await self.bridge_channel.send(embed=final_embed, view=self.get_patch_files_view())
+            await self.bridge_thread.send(embed=final_embed, view=self.get_patch_files_view())
 
         except Exception as e:
             error_message = f"An error occurred: {str(e)}"
             print(f"ERROR during session start: {error_message}")
-            await self.bridge_channel.send(f"Error at starting session for host {self.host.mention}:\n```\n{error_message}\n```")
+            await self.bridge_thread.send(f"Error at starting session for host {self.host.mention}:\n```\n{error_message}\n```")
             self.reset_session()
 
     async def _run_generation(self):
@@ -233,7 +240,7 @@ class SessionManager:
         return view
 
     def _start_chat_bridge(self):
-        if self.server_process and self.bridge_channel:
+        if self.server_process and self.bridge_thread:
             self.chat_bridge_task = asyncio.create_task(self._chat_bridge_task(
                 self.server_process.stdout,
                 self.server_process.stderr
@@ -269,7 +276,7 @@ class SessionManager:
                             receiver_mention = receiver_data['user'].mention if receiver_data else f"**{receiver_name.strip()}**"
                             
                             message = f"🎁 {sender_mention} sent **{item_name.strip()}** to {receiver_mention}!"
-                            await self.bridge_channel.send(message, allowed_mentions=silent_mentions)
+                            await self.bridge_thread.send(message, allowed_mentions=silent_mentions)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
@@ -283,6 +290,14 @@ class SessionManager:
         print("Chat bridge loop finished.")
         
     async def shutdown_gracefully(self):
+        print("Archiving session thread...")
+        if self.bridge_thread:
+            try:
+                await self.bridge_thread.edit(archived=True, locked=True)
+                print("Session thread archived.")
+            except Exception as e:
+                print(f"Error archiving thread: {e}")
+
         print("Shutting down server process...")
         if self.state == "running" and self.server_process:
             print("Terminating server process...")
