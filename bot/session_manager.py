@@ -24,12 +24,20 @@ class SessionManager:
     def is_active(self):
         return self.state != "inactive"
 
-    def reset_session(self):
+    async def reset_session(self):
         self.state = "inactive"
         self.host = None
         self.players = {}
         self.anchor_message = None
-        self.bridge_thread = None
+
+        if self.bridge_thread:
+            print("Archiving session thread...")
+            try:
+                await self.bridge_thread.edit(archived=True, locked=True)
+                self.bridge_thread = None
+                print("Session thread archived.")
+            except Exception as e:
+                print(f"Error archiving thread: {e}")
         
         # Terminate running processes
         if self.server_process and self.server_process.returncode is None:
@@ -52,7 +60,7 @@ class SessionManager:
         if self.is_active():
             return False, "A session is already active or being prepared."
         
-        self.reset_session()
+        await self.reset_session()
         self.state = "preparing"
         self.host = host
         self.anchor_message = anchor_message
@@ -96,12 +104,6 @@ class SessionManager:
 
     async def _start_session_task(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str):
         try:
-            thread_name = f"Archipelago session - host: {self.host.display_name}"
-            self.bridge_thread = await channel.create_thread(name=thread_name, type=discord.ChannelType.public_thread, auto_archive_duration=1440)
-            await self.bridge_thread.send(f"Session thread created for host {self.host.mention}.")
-
-            await self.anchor_message.edit(content=f"Session started by {self.host.mention}. Join the thread: {self.bridge_thread.mention}")
-
             # Delete the preparation message
             if self.anchor_message:
                 await self.anchor_message.delete()
@@ -127,14 +129,14 @@ class SessionManager:
             )
             if password:
                 final_embed.add_field(name="Password", value=f"`{password}`", inline=False)
-            
-            await self.bridge_thread.send(embed=final_embed, view=self.get_patch_files_view())
+
+            thread_name = f"Archipelago session - host: {self.host.display_name}"
+            main_message = await channel.send(embed=final_embed, content=f"Session has started.")
+            self.bridge_thread = await main_message.create_thread(name=thread_name, auto_archive_duration=1440)
 
         except Exception as e:
-            error_message = f"An error occurred: {str(e)}"
-            print(f"ERROR during session start: {error_message}")
-            await self.bridge_thread.send(f"Error at starting session for host {self.host.mention}:\n```\n{error_message}\n```")
-            self.reset_session()
+            print(f"ERROR during session start: {e}")
+            await self.reset_session()
 
     async def _run_generation(self):
         generator_executable = os.path.join(self.archipelago_path, 'ArchipelagoGenerate')
@@ -294,14 +296,6 @@ class SessionManager:
         print("Chat bridge loop finished.")
         
     async def shutdown_gracefully(self):
-        print("Archiving session thread...")
-        if self.bridge_thread:
-            try:
-                await self.bridge_thread.edit(archived=True, locked=True)
-                print("Session thread archived.")
-            except Exception as e:
-                print(f"Error archiving thread: {e}")
-
         print("Shutting down server process...")
         if self.state == "running" and self.server_process:
             print("Terminating server process...")
@@ -318,5 +312,5 @@ class SessionManager:
             self.chat_bridge_task.cancel()
             print("Chat bridge task cancelled.")
 
-        self.reset_session()
+        await self.reset_session()
         print("Session manager state reset.")

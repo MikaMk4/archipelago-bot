@@ -59,7 +59,7 @@ class SessionCog(commands.Cog):
     @session_group.command(name="upload_yaml", description="Upload your YAML file for the session.")
     @app_commands.describe(yaml_file="The YAML file to upload.")
     async def upload_yaml(self, interaction: discord.Interaction, yaml_file: discord.Attachment):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
 
         if not self.session_manager.is_active() or self.session_manager.state != "preparing":
             await interaction.followup.send("There is currently no session preparing.", ephemeral=True)
@@ -116,8 +116,6 @@ class SessionCog(commands.Cog):
         if not all(p['ready'] for p in self.session_manager.get_player_status()):
             await interaction.followup.send("Not everyone has uploaded their YAML yet.", ephemeral=True)
             return
-
-        await interaction.followup.send("Generating and starting game. This may take a while...", ephemeral=True)
         
         success, message = self.session_manager.begin_generation_and_start(
                 password, 
@@ -145,7 +143,7 @@ class SessionCog(commands.Cog):
             except discord.NotFound:
                 pass
 
-        self.session_manager.reset_session()
+        await self.session_manager.reset_session()
         await interaction.response.send_message("The session was canceled.")
 
 async def setup(bot: commands.Bot):
