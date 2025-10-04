@@ -26,16 +26,14 @@ class SessionCog(commands.Cog):
             return
         
         await interaction.response.defer()
+        anchor_message = await interaction.original_response()
 
-
-        success, message = await self.session_manager.create_session(interaction.user)
+        success, message = await self.session_manager.create_session(interaction.user, anchor_message)
 
         if not success:
             await interaction.followup.send(message, ephemeral=True)
             return
 
-        await interaction.followup.send(message, ephemeral=True)
-        self.session_manager.anchor_message = interaction.original_response()
         await _update_preparation_embed(self.session_manager)
 
     @session_group.command(name="add_player", description="Add a player to the current session.")
@@ -128,11 +126,6 @@ class SessionCog(commands.Cog):
                 collect_mode,
                 remaining_mode
             )
-
-        # Delete the preparation message
-        if self.session_manager.anchor_message:
-            await self.session_manager.anchor_message.delete()
-            self.session_manager.anchor_message = None
 
         await interaction.followup.send("Game generation started in the background. You will be notified when it's ready.")
 

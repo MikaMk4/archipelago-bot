@@ -10,6 +10,7 @@ config = load_config()
 
 async def _update_preparation_embed(session_manager: SessionManager):
     if not session_manager.anchor_message:
+        print("No anchor message set, cannot update preparation embed.")
         return
 
     player_statuses = session_manager.get_player_status()
@@ -39,8 +40,13 @@ async def _update_preparation_embed(session_manager: SessionManager):
 
     try:
         await session_manager.anchor_message.edit(embed=embed)
+        print("Message was edited successfully.", flush=True)
     except discord.NotFound:
         print("ERROR: Preparation message not found, could not edit.")
+    except Exception as e:
+        print(f"ERROR: Failed to edit preparation message: {e}")
+        import traceback
+        traceback.print_exc()
 
 def get_whitelist():
     if not os.path.exists(config['whitelist_path']):

@@ -48,13 +48,14 @@ class SessionManager:
         print("Session reset and directories cleaned.")
 
 
-    async def create_session(self, host: discord.User):
+    async def create_session(self, host: discord.User, anchor_message: discord.WebhookMessage):
         if self.is_active():
             return False, "A session is already active or being prepared."
         
         self.reset_session()
         self.state = "preparing"
         self.host = host
+        self.anchor_message = anchor_message
         
         # Add the host to the players
         if host.display_name not in self.players:
@@ -100,7 +101,11 @@ class SessionManager:
             await self.bridge_thread.send(f"Session thread created for host {self.host.mention}.")
 
             await self.anchor_message.edit(content=f"Session started by {self.host.mention}. Join the thread: {self.bridge_thread.mention}")
-            self.anchor_message = None
+
+            # Delete the preparation message
+            if self.anchor_message:
+                await self.anchor_message.delete()
+                self.anchor_message = None
 
             zip_file_path = await self._run_generation()
             self._extract_patch_files(zip_file_path)
