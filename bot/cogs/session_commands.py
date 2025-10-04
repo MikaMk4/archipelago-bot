@@ -101,7 +101,8 @@ class SessionCog(commands.Cog):
             password: str = None,
             release_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = 'auto',
             collect_mode: Literal['auto', 'enabled', 'disabled', 'goal', 'auto-enabled'] = 'auto',
-            remaining_mode: Literal['enabled', 'disabled', 'goal'] = 'goal'
+            remaining_mode: Literal['enabled', 'disabled', 'goal'] = 'goal',
+            hint_cost: int = 10,
         ):
         await interaction.response.defer()
 
@@ -122,7 +123,8 @@ class SessionCog(commands.Cog):
                 interaction.channel,
                 release_mode,
                 collect_mode,
-                remaining_mode
+                remaining_mode,
+                hint_cost
             )
 
         await interaction.followup.send("Game generation started in the background. You will be notified when it's ready.")

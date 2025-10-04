@@ -82,7 +82,7 @@ class SessionManager:
         print(f"Player {new_player.display_name} added to the session.")
         return True, f"{new_player.mention} added to the session."
     
-    def begin_generation_and_start(self, password: str, channel: discord.TextChannel, release_mode: str = None, collect_mode: str = None, remaining_mode: str = None):
+    def begin_generation_and_start(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str, hint_cost: int):
         if self.state != "preparing":
             return False, "Session is not in the correct state to start generation."
         
@@ -90,7 +90,7 @@ class SessionManager:
         self.state = "generating"
         
         print("Creating background task for session start...")
-        asyncio.create_task(self._start_session_task(password, channel, release_mode, collect_mode, remaining_mode))
+        asyncio.create_task(self._start_session_task(password, channel, release_mode, collect_mode, remaining_mode, hint_cost))
         return True, "Generation process has been successfully launched."
 
     def set_player_ready(self, player_name: str):
@@ -102,7 +102,7 @@ class SessionManager:
     def get_player_status(self):
         return list(self.players.values())
 
-    async def _start_session_task(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str):
+    async def _start_session_task(self, password: str, channel: discord.TextChannel, release_mode: str, collect_mode: str, remaining_mode: str, hint_cost: int):
         try:
             # Delete the preparation message
             if self.anchor_message:
@@ -111,7 +111,7 @@ class SessionManager:
 
             zip_file_path = await self._run_generation()
             self._extract_patch_files(zip_file_path)
-            await self._run_server(zip_file_path, password, release_mode, collect_mode, remaining_mode)
+            await self._run_server(zip_file_path, password, release_mode, collect_mode, remaining_mode, hint_cost)
 
             await asyncio.sleep(1) 
             if not self.server_process or self.server_process.returncode is not None:
@@ -164,7 +164,7 @@ class SessionManager:
             raise FileNotFoundError("Could not find generated game zip file.")
 
 
-    async def _run_server(self, zip_file_path: str, password: str, release_mode: str, collect_mode: str, remaining_mode: str):
+    async def _run_server(self, zip_file_path: str, password: str, release_mode: str, collect_mode: str, remaining_mode: str, hint_cost: int):
         server_executable = os.path.join(self.archipelago_path, 'ArchipelagoServer')
         
         args = [
@@ -181,6 +181,8 @@ class SessionManager:
             args.extend(['--collect_mode', collect_mode])
         if remaining_mode:
             args.extend(['--remaining_mode', remaining_mode])
+
+        args.extend(['--hint_cost', str(hint_cost)])
 
         args.append(zip_file_path)
 
