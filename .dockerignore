@@ -1,0 +1,14 @@
+.venv
+archipelago-bot.egg-info
+__pycache__
+.env
+.git
+.gitignore
+.dockerignore
+.vscode
+Dockerfile
+README.md
+build
+data
+compose-dev.yaml
+docker-compose.yaml

@@ -24,17 +24,16 @@ class SessionCog(commands.Cog):
         if not is_whitelisted(interaction.user.id) and not await self.bot.is_owner(interaction.user):
             await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
             return
+        
+        await interaction.response.defer()
+        anchor_message = await interaction.original_response()
 
-        success, message = await self.session_manager.create_session(interaction.user)
+        success, message = await self.session_manager.create_session(interaction.user, anchor_message)
 
         if not success:
-            await interaction.response.send_message(message, ephemeral=True)
+            await interaction.followup.send(message, ephemeral=True)
             return
 
-        # Create and send the initial status message
-        await interaction.response.send_message("Session preparation started. Players can now upload their YAML files.")
-        original_response = await interaction.original_response()
-        self.session_manager.preparation_message = original_response
         await _update_preparation_embed(self.session_manager)
 
     @session_group.command(name="add_player", description="Add a player to the current session.")
@@ -128,11 +127,6 @@ class SessionCog(commands.Cog):
                 remaining_mode
             )
 
-        # Delete the preparation message
-        if self.session_manager.preparation_message:
-            await self.session_manager.preparation_message.delete()
-            self.session_manager.preparation_message = None
-
         await interaction.followup.send("Game generation started in the background. You will be notified when it's ready.")
 
     @session_group.command(name="cancel", description="Cancels the current session preparation or running game.")
@@ -145,9 +139,11 @@ class SessionCog(commands.Cog):
             await interaction.response.send_message("Only the host can cancel the session.", ephemeral=True)
             return
 
-        # Delete the preparation message if it exists
-        if self.session_manager.preparation_message:
-            await self.session_manager.preparation_message.delete()
+        if self.session_manager.anchor_message:
+            try:
+                await self.session_manager.anchor_message.delete()
+            except discord.NotFound:
+                pass
 
         self.session_manager.reset_session()
         await interaction.response.send_message("The session was canceled.")

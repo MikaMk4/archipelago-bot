@@ -9,7 +9,8 @@ from bot.session_manager import SessionManager
 config = load_config()
 
 async def _update_preparation_embed(session_manager: SessionManager):
-    if not session_manager.preparation_message:
+    if not session_manager.anchor_message:
+        print("No anchor message set, cannot update preparation embed.")
         return
 
     player_statuses = session_manager.get_player_status()
@@ -38,11 +39,14 @@ async def _update_preparation_embed(session_manager: SessionManager):
         embed.color = discord.Color.green()
 
     try:
-        await session_manager.preparation_message.edit(embed=embed)
+        await session_manager.anchor_message.edit(embed=embed)
+        print("Message was edited successfully.", flush=True)
     except discord.NotFound:
         print("ERROR: Preparation message not found, could not edit.")
-        if session_manager.preparation_channel:
-            await session_manager.preparation_channel.send("The preparation message was deleted. Session canceled.")
+    except Exception as e:
+        print(f"ERROR: Failed to edit preparation message: {e}")
+        import traceback
+        traceback.print_exc()
 
 def get_whitelist():
     if not os.path.exists(config['whitelist_path']):
