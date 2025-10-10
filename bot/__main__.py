@@ -1,6 +1,7 @@
 import asyncio
 import os
 import signal
+import sys
 
 import discord
 from discord.ext import commands
@@ -17,7 +18,10 @@ class ArchipelagoBot(commands.Bot):
 
         super().__init__(command_prefix="!", intents=intents)
 
-        self.session_manager = SessionManager()
+        self.python_executable = sys.executable
+        print(f"Using Python executable: {self.python_executable}")
+
+        self.session_manager = SessionManager(python_executable=self.python_executable)
 
     async def setup_hook(self):
         print("Running setup hook...")

@@ -11,15 +11,17 @@ from bot.config import load_config
 config = load_config()
 
 class SessionManager:
-    def __init__(self):
+    def __init__(self, python_executable: str):
         self.state = "inactive"  # "inactive", "preparing", "running"
         self.host = None
         self.players = {}  # Map: slot_name -> {'user': discord.User, 'ready': bool}
         self.archipelago_path = config['archipelago_path']
         self.server_process = None
+        self.webhost_process = None
         self.chat_bridge_task = None
         self.anchor_message = None
         self.bridge_thread = None
+        self.python_executable = python_executable
 
     def is_active(self):
         return self.state != "inactive"
@@ -112,6 +114,7 @@ class SessionManager:
             zip_file_path = await self._run_generation()
             self._extract_patch_files(zip_file_path)
             await self._run_server(zip_file_path, password, release_mode, collect_mode, remaining_mode)
+            await self._run_webhost()
 
             await asyncio.sleep(1) 
             if not self.server_process or self.server_process.returncode is not None:
@@ -139,9 +142,10 @@ class SessionManager:
             await self.reset_session()
 
     async def _run_generation(self):
-        generator_executable = os.path.join(self.archipelago_path, 'ArchipelagoGenerate')
+        generator_executable = os.path.join(self.archipelago_path, 'Generate.py')
         
         process = await asyncio.create_subprocess_exec(
+            self.python_executable,
             generator_executable,
             '--player_files', config['upload_path'],
             '--outputpath', config['games_path'],
@@ -165,9 +169,10 @@ class SessionManager:
 
 
     async def _run_server(self, zip_file_path: str, password: str, release_mode: str, collect_mode: str, remaining_mode: str):
-        server_executable = os.path.join(self.archipelago_path, 'ArchipelagoServer')
+        server_executable = os.path.join(self.archipelago_path, 'MultiServer.py')
         
         args = [
+            self.python_executable,
             server_executable,
             '--host', '0.0.0.0',
             '--port', str(config['server_port']),
@@ -187,10 +192,29 @@ class SessionManager:
         # Start the server process
         self.server_process = await asyncio.create_subprocess_exec(
             *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            # stdout=asyncio.subprocess.PIPE,
+            # stderr=asyncio.subprocess.PIPE
         )
         print(f"Server started with PID: {self.server_process.pid}")
+
+    async def _run_webhost(self):
+        """Starts the Archipelago WebHost process."""
+        webhost_executable = os.path.join(self.archipelago_path, 'WebHost.py')
+        
+        args = [
+            self.python_executable,
+            webhost_executable,
+            '--host', '0.0.0.0',
+            '--port', str(config['webhost_port']),
+        ]
+
+        # Starte den Webhost-Prozess
+        self.webhost_process = await asyncio.create_subprocess_exec(
+            *args,
+            # stdout=asyncio.subprocess.PIPE,
+            # stderr=asyncio.subprocess.PIPE
+        )
+        print(f"WebHost started with PID: {self.webhost_process.pid}")
 
     def _extract_patch_files(self, zip_file_path: str):
         """
@@ -297,17 +321,24 @@ class SessionManager:
         
     async def shutdown_gracefully(self):
         print("Shutting down server process...")
-        if self.state == "running" and self.server_process:
-            print("Terminating server process...")
-            try:
-                self.server_process.terminate()
-                await self.server_process.wait()
-                print("Server process terminated.")
-            except ProcessLookupError:
-                print("Server process already terminated.")
-            except Exception as e:
-                print(f"Error terminating server process: {e}")
+        if self.state == "running":
+            if self.server_process:
+                print("Terminating server process...")
+                try:
+                    self.server_process.terminate()
+                    await self.server_process.wait()
+                    print("Server process terminated.")
+                except Exception as e:
+                    print(f"Error terminating server process: {e}")
 
+            if self.webhost_process:
+                print("Terminating webhost process...")
+                try:
+                    self.webhost_process.terminate()
+                    await self.webhost_process.wait()
+                    print("Webhost process terminated.")
+                except Exception as e:
+                    print(f"Error terminating webhost process: {e}")
         if self.chat_bridge_task and not self.chat_bridge_task.done():
             self.chat_bridge_task.cancel()
             print("Chat bridge task cancelled.")
