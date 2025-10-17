@@ -12,6 +12,7 @@ config = load_config()
 class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        super().__init__()
 
     admin_group = app_commands.Group(name="admin", description="Manages administrative settings.")
 
@@ -31,20 +32,6 @@ class AdminCog(commands.Cog):
             json.dump(whitelist, f)
 
         await interaction.response.send_message(f"{user.mention} has been added to the whitelist.", ephemeral=True)
-
-    @admin_group.command(name="sync", description="Synchronizes the commands with Discord.")
-    async def sync(self, interaction: discord.Interaction):
-        """Manually syncs the command tree with Discord."""
-        if not await self.bot.is_owner(interaction.user):
-            await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        guild = discord.Object(id=config['guild_id'])
-        self.bot.tree.copy_global_to(guild=guild)
-        await self.bot.tree.sync(guild=guild)
-        print("Commands synced manually.")
-        await interaction.followup.send("Commands successfully synchronized!")
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(AdminCog(bot), guilds=[discord.Object(id=config['guild_id'])])

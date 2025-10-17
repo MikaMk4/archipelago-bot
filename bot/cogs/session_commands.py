@@ -16,6 +16,7 @@ class SessionCog(commands.Cog):
     def __init__(self, bot: commands.Bot, session_manager: SessionManager):
         self.bot = bot
         self.session_manager = session_manager
+        super().__init__()
 
     session_group = app_commands.Group(name="session", description="Manages an Archipelago session.")
 

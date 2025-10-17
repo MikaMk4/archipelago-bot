@@ -3,6 +3,7 @@ import os
 import signal
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from bot.config import load_config
@@ -44,6 +45,33 @@ class ArchipelagoBot(commands.Bot):
 
 async def main():
     bot = ArchipelagoBot()
+
+    @bot.tree.command(name="sync", description="Synchronizes commands globally or to a specific guild.")
+    @app_commands.describe(guild_id="Optional: The ID of the guild to sync commands for.")
+    async def sync(interaction: discord.Interaction, guild_id: str = None):
+        """Manually syncs the command tree with Discord."""
+
+        if not await bot.is_owner(interaction.user):
+            await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            if guild_id:
+                guild = discord.Object(id=int(guild_id))
+                await bot.tree.sync(guild=guild)
+                message = f"Commands successfully synchronized for guild `{guild_id}`!"
+                print(f"Commands synced to guild {guild_id}.")
+            else:
+                await bot.tree.sync()
+                message = "Commands successfully synchronized globally!"
+                print("Commands synced globally.")
+
+            await interaction.followup.send(message)
+
+        except (ValueError, discord.HTTPException) as e:
+            await interaction.followup.send(f"Failed to sync. Is the Guild ID valid? Error: {e}", ephemeral=True)
 
     # Shutdown handler
     async def shutdown(sig, loop):
